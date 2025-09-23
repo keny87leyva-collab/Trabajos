@@ -12,3 +12,4 @@ resultado=numero_a+numero_b
 print (resultado)
 print(f"la resta de los numeros es: {int(numero_a)}- {int(numero_b)}")
 print (resultado)
+print(f"multiplicacion {int(numero_a)} * {int(numero_b)}")
