@@ -1,8 +1,9 @@
 import serial
 import time
+import pandas as pd
 
 class RouterCisco:
-    def _init_(self, puerto, baudios=9600, timeout=1):
+    def __init__(self, puerto, baudios=9600, timeout=1):
         """
         Inicializa la conexión serial con el router Cisco.
         """
@@ -47,23 +48,47 @@ class RouterCisco:
             self.conexion.close()
             print("[+] Conexión cerrada.")
 
-if __name__ == "_main_":
-    puerto = 'COM12' \
-    ''  # Cambia según tu puerto
-    router = RouterCisco(puerto)
-    router.conectar()
-    
-    if router.conexion:
-        try:
-            while True:
-                comando = input("Ingrese comando para el router (use 'quit' para salir del programa): ")
-                if comando.lower() == 'quit':  # Solo 'quit' cierra el script
-                    print("[*] Saliendo del programa...")
-                    break
-                # Envía cualquier comando, incluyendo 'exit', al router
-                respuesta = router.enviar_comando(comando)
-                print(respuesta)
-        except KeyboardInterrupt:
-            print("\n[*] Se interrumpió la ejecución con Ctrl+C.")
-        finally:
-            router.cerrar()
+
+def cargar_dispositivos(archivo_csv):
+    """
+    Lee el archivo CSV y devuelve una lista de objetos RouterCisco.
+    """
+    try:
+        df = pd.read_csv(archivo_csv)
+        routers = []
+
+        for _, fila in df.iterrows():
+            puerto = fila["puerto"]
+            baudrate = int(fila["baudrate"])
+            routers.append(RouterCisco(puerto, baudrate))
+
+        return routers
+
+    except FileNotFoundError:
+        print("[!] Error: No se encontró el archivo CSV.")
+        return []
+    except KeyError as e:
+        print(f"[!] Error: Falta la columna {e} en el CSV.")
+        return []
+
+
+if __name__ == "__main__":
+    archivo = "devices.csv"  # nombre del archivo con tus dispositivos
+    dispositivos = cargar_dispositivos(archivo)
+
+    if not dispositivos:
+        print("[!] No se cargaron dispositivos.")
+    else:
+        for router in dispositivos:
+            router.conectar()
+            if router.conexion:
+                try:
+                    while True:
+                        comando = input("Ingrese comando (quit para salir): ")
+                        if comando.lower() == "quit":
+                            print("[*] Saliendo del programa...")
+                            break
+                        respuesta = router.enviar_comando(comando)
+                        print(respuesta)
+                finally:
+                    router.cerrar()
