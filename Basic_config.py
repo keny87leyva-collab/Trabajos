@@ -82,5 +82,5 @@ def cargar_dispositivos_y_configurar(archivo_csv):
 # Programa principal
 # -------------------------
 if __name__ == "__main__":
-    archivo = "device.csv"  # Nombre del archivo con la lista de dispositivos
+    archivo = "devices.csv"  # Nombre del archivo con la lista de dispositivos
     cargar_dispositivos_y_configurar(archivo)
