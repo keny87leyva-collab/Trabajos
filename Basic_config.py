@@ -77,7 +77,7 @@ def cargar_dispositivos(archivo_csv):
 
 
 if __name__ == "__main__":
-    archivo = "device.csv"  # nombre del archivo con tus dispositivos
+    archivo = "devices.csv"  # nombre del archivo con tus dispositivos
     dispositivos = cargar_dispositivos(archivo)
 
     if not dispositivos:
