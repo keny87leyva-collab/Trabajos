@@ -17,10 +17,14 @@ class RouterCisco:
         Abre la conexión serial al router.
         """
         try:
-            self.conexion = serial.Serial(port=self.puerto, baudrate=self.baudios, timeout=self.timeout)
+            self.conexion = serial.Serial(
+                port=self.puerto,
+                baudrate=self.baudios,
+                timeout=self.timeout
+            )
             time.sleep(2)  # Espera para inicializar la consola
             print(f"[+] Conectado correctamente al router por {self.puerto} a {self.baudios} bps.")
-        except serial.SerialException as e:
+        except Exception as e:
             print(f"[!] Error al conectar: {e}")
             self.conexion = None
 
@@ -73,7 +77,7 @@ def cargar_dispositivos(archivo_csv):
 
 
 if __name__ == "__main__":
-    archivo = "devices.csv"  # nombre del archivo con tus dispositivos
+    archivo = "device.csv"  # nombre del archivo con tus dispositivos
     dispositivos = cargar_dispositivos(archivo)
 
     if not dispositivos:
