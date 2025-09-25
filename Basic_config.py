@@ -1,5 +1,6 @@
 import serial
 import time
+import pandas as pd
 
 def configure_device(port, baudrate, hostname, username, password, domain):
     try:
@@ -42,9 +43,35 @@ def configure_device(port, baudrate, hostname, username, password, domain):
         ser.write("write memory\r\n".encode())  # guardar config
         ser.close()
 
-        print("Device configured successfully.")
+        print(f"[✔] {hostname} configurado correctamente en {port}.")
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"[✘] Error en {hostname} ({port}): {e}")
 
-r1= configure_device("COM3", 9600, "Router1", "cisco", "cisco", "example.com")
+
+def cargar_dispositivos_y_configurar(archivo_csv):
+    try:
+        # Leer archivo CSV
+        df = pd.read_csv(archivo_csv)
+
+        for _, fila in df.iterrows():
+            nombre = fila["nombre_dispositivo"]
+            serie = fila["serie_dispositivo"]   # (opcional, aquí no lo usamos pero está disponible)
+            puerto = fila["puerto"]
+            baudrate = int(fila["baudrate"])
+            usuario = fila["usuario"]
+            password = fila["password"]
+            domain = fila["domain"]
+
+            print(f"\n>>> Configurando {nombre} en {puerto}...")
+            configure_device(puerto, baudrate, nombre, usuario, password, domain)
+
+    except FileNotFoundError:
+        print("Error: No se encontró el archivo CSV.")
+    except KeyError as e:
+        print(f"Error: Falta la columna {e} en el CSV.")
+
+
+if __name__ == "__main__":
+    archivo = "devices.csv"  # 👈 aquí va el nombre real de tu archivo
+    cargar_dispositivos_y_configurar(archivo)
