@@ -1,1 +1,4 @@
 nombre_dispositivo,serie_dispositivo,puerto,baudrate,usuario,password,domain
+Router1,12345ABC,COM3,9600,cisco,cisco,example.com
+Router2,67890XYZ,COM4,9600,admin123,admin123,school.net
+Switch1,11122DEF,COM5,9600,user,pass123,redes.local
