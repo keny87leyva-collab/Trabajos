@@ -2,6 +2,9 @@ import serial
 import time
 import pandas as pd
 
+# -------------------------
+# Función para configurar 1 dispositivo
+# -------------------------
 def configure_device(port, baudrate, hostname, username, password, domain):
     try:
         # Abrir conexión serial
@@ -38,7 +41,7 @@ def configure_device(port, baudrate, hostname, username, password, domain):
         ser.write("line console 0\r\n".encode())
         time.sleep(1)
 
-        # Cerrar sesión
+        # Cerrar sesión y guardar
         ser.write("end\r\n".encode())
         ser.write("write memory\r\n".encode())  # guardar config
         ser.close()
@@ -49,6 +52,9 @@ def configure_device(port, baudrate, hostname, username, password, domain):
         print(f"[✘] Error en {hostname} ({port}): {e}")
 
 
+# -------------------------
+# Función para leer lista de dispositivos desde un archivo CSV
+# -------------------------
 def cargar_dispositivos_y_configurar(archivo_csv):
     try:
         # Leer archivo CSV
@@ -56,7 +62,7 @@ def cargar_dispositivos_y_configurar(archivo_csv):
 
         for _, fila in df.iterrows():
             nombre = fila["nombre_dispositivo"]
-            serie = fila["serie_dispositivo"]   # (opcional, aquí no lo usamos pero está disponible)
+            serie = fila["serie_dispositivo"]   # opcional
             puerto = fila["puerto"]
             baudrate = int(fila["baudrate"])
             usuario = fila["usuario"]
@@ -72,6 +78,9 @@ def cargar_dispositivos_y_configurar(archivo_csv):
         print(f"Error: Falta la columna {e} en el CSV.")
 
 
+# -------------------------
+# Programa principal
+# -------------------------
 if __name__ == "__main__":
-    archivo = "devices.csv"  # 👈 aquí va el nombre real de tu archivo
+    archivo = "device.csv"  # Nombre del archivo con la lista de dispositivos
     cargar_dispositivos_y_configurar(archivo)
