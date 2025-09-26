@@ -1,6 +1,8 @@
 import serial
 import time
 import pandas as pd
+import re  # 👈 necesario para regex
+
 
 class RouterCisco:
     def __init__(self, puerto, baudios=9600, timeout=1):
@@ -32,17 +34,25 @@ class RouterCisco:
             self.conexion.close()
             print("[+] Conexión cerrada.")
 
-    def obtener_serie(self):
+    def obtener_serie_y_modelo(self):
         """
-        Envía un comando para obtener la serie del dispositivo.
-        Este ejemplo asume que el router responde al comando 'show version'.
+        Envía 'show version' y usa regex para extraer el modelo y la serie.
         """
         if self.conexion is None:
-            return None
-        salida = self.enviar_comando("show version", espera=2)
-        # Aquí habría que extraer la serie de la salida real del router
-        # Por ahora simulamos que devuelve "12345ABC" para pruebas
-        return "12345ABC"  # <-- cambiar por parsing real si se quiere
+            return None, None
+
+        salida = self.enviar_comando("show version", espera=3)
+
+        # Buscar serie (puede aparecer como "System serial number" o "Serial Number")
+        serie_match = re.search(r"(?:System serial number|Serial Number)\s*[: ]\s*([A-Za-z0-9]+)", salida)
+
+        # Buscar modelo (puede aparecer como "Model number: XXXXXX")
+        modelo_match = re.search(r"Model number:\s*([A-Za-z0-9\-]+)", salida)
+
+        serie = serie_match.group(1) if serie_match else None
+        modelo = modelo_match.group(1) if modelo_match else None
+
+        return serie, modelo
 
 
 def cargar_dispositivos(archivo_csv):
@@ -74,14 +84,17 @@ if __name__ == "__main__":
         router = d["router"]
         router.conectar()
         if router.conexion:
-            serie_real = router.obtener_serie()
-            if serie_real == d["serie_esperada"]:
-                print(f"[✔] Serie coincide ({serie_real}). Aplicando comandos a {d['nombre']}.")
-                # Aquí pondrías los comandos de configuración
+            serie_real, modelo_real = router.obtener_serie_y_modelo()
+
+            if serie_real and serie_real == d["serie_esperada"]:
+                print(f"[✔] Serie coincide ({serie_real}). Aplicando comandos a {d['nombre']} ({modelo_real}).")
+
+                # Comandos de configuración
                 router.enviar_comando(f"hostname {d['nombre']}")
                 router.enviar_comando(f"username {d['usuario']} privilege 15 secret {d['password']}")
                 router.enviar_comando(f"ip domain-name {d['domain']}")
-                # etc...
             else:
                 print(f"[✘] Serie NO coincide ({serie_real} != {d['serie_esperada']}). Saltando {d['nombre']}.")
+
             router.cerrar()
+
