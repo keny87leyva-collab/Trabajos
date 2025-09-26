@@ -53,19 +53,20 @@ class RouterCisco:
 
 def cargar_dispositivos(archivo_csv):
     try:
-        df = pd.read_csv(archivo_csv)
+        # Carga el CSV y reemplaza vacíos por "Desconocido"
+        df = pd.read_csv(archivo_csv).fillna("Desconocido")
         routers = []
         for _, fila in df.iterrows():
-            puerto = fila["puerto"]
-            baudrate = int(fila["baudrate"])
+            puerto = str(fila["puerto"]).strip()
+            baudrate = int(fila["baudrate"]) if str(fila["baudrate"]).isdigit() else 9600
             routers.append({
                 "router": RouterCisco(puerto, baudrate),
-                "serie_esperada": fila["serie_dispositivo"],
-                "modelo_esperado": fila["modelo_dispositivo"],
-                "nombre": fila["nombre_dispositivo"],
-                "usuario": fila["usuario"],
-                "password": fila["password"],
-                "domain": fila["domain"]
+                "serie_esperada": str(fila["serie_dispositivo"]).strip(),
+                "modelo_esperado": str(fila["modelo_dispositivo"]).strip(),
+                "nombre": str(fila["nombre_dispositivo"]).strip(),
+                "usuario": str(fila["usuario"]).strip(),
+                "password": str(fila["password"]).strip(),
+                "domain": str(fila["domain"]).strip()
             })
         return routers
     except Exception as e:
