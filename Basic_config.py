@@ -1,95 +1,147 @@
 import serial
 import time
 import pandas as pd
+import os
 import re
 
-class RouterCisco:
-    def __init__(self, puerto, baudios=9600, timeout=1):
-        self.puerto = puerto
-        self.baudios = baudios
-        self.timeout = timeout
-        self.conexion = None
+# 🔹 Limpiar pantalla según el SO
+def clear_console():
+    if os.name == 'nt':
+        os.system('cls')
+    else:
+        os.system('clear')
 
-    def conectar(self):
-        try:
-            self.conexion = serial.Serial(port=self.puerto, baudrate=self.baudios, timeout=self.timeout)
-            time.sleep(2)
-            print(f"[+] Conectado a {self.puerto} a {self.baudios} bps.")
-        except Exception as e:
-            print(f"[!] Error al conectar: {e}")
-            self.conexion = None
+# 🔹 Enviar comando al router
+def send_command(ser, command, delay=1):
+    ser.write((command + "\r\n").encode())  # CRLF
+    time.sleep(delay)
+    output = ser.read(ser.in_waiting).decode(errors="ignore")
+    return output
 
-    def enviar_comando(self, comando, espera=1):
-        if self.conexion is None:
-            print("[!] No hay conexión activa.")
-            return None
-        self.conexion.write((comando + '\n').encode())
-        time.sleep(espera)
-        salida = self.conexion.read_all().decode(errors='ignore')
-        return salida
+# 🔹 Obtener número de serie desde "show inventory"
+def get_serial(ser):
+    send_command(ser, "terminal length 0")  # evitar paginación
+    output = send_command(ser, "show inventory", delay=2)
+    match = re.search(r"SN:\s*([A-Z0-9]+)", output)
+    if match:
+        return match.group(1)
+    return None
 
-    def cerrar(self):
-        if self.conexion:
-            self.conexion.close()
-            print("[+] Conexión cerrada.")
-
-    def obtener_serie_y_modelo(self):
-        """
-        Usa 'show inventory' para obtener el modelo (PID) y número de serie (SN).
-        """
-        if self.conexion is None:
-            return None, None
-
-        salida = self.enviar_comando("show inventory", espera=3)
-
-        modelo_match = re.search(r"PID:\s+(\S+)", salida)
-        modelo = modelo_match.group(1) if modelo_match else "Desconocido"
-
-        serie_match = re.search(r"SN:\s+(\S+)", salida)
-        serie = serie_match.group(1) if serie_match else "Desconocido"
-
-        return serie, modelo
-
-
-def cargar_dispositivos(archivo_csv):
+# 🔹 Configuración de dispositivo
+def configure_device(port, hostname, user, password, domain):
     try:
-        # Carga el CSV y reemplaza vacíos por "Desconocido"
-        df = pd.read_csv(archivo_csv).fillna("Desconocido")
-        routers = []
-        for _, fila in df.iterrows():
-            puerto = str(fila["puerto"]).strip()
-            baudrate = int(fila["baudrate"]) if str(fila["baudrate"]).isdigit() else 9600
-            routers.append({
-                "router": RouterCisco(puerto, baudrate),
-                "serie_esperada": str(fila["serie_dispositivo"]).strip(),
-                "modelo_esperado": str(fila["modelo_dispositivo"]).strip(),
-                "nombre": str(fila["nombre_dispositivo"]).strip(),
-                "usuario": str(fila["usuario"]).strip(),
-                "password": str(fila["password"]).strip(),
-                "domain": str(fila["domain"]).strip()
-            })
-        return routers
+        ser = serial.Serial(port, baudrate=9600, timeout=1)
+        time.sleep(2)
+        print(f"\n🔗 Conectado al dispositivo en {port} ({hostname})")
+
+        serial_num = get_serial(ser)
+        if not serial_num:
+            print("⚠ No se pudo obtener el número de serie. Saltando configuración.")
+            ser.close()
+            return False
+
+        if hostname[1:] != serial_num:
+            print(f"⚠ La serie del dispositivo ({serial_num}) no coincide con la del CSV ({hostname[1:]}). Saltando configuración.")
+            ser.close()
+            return False
+
+        send_command(ser, "enable")
+        send_command(ser, "configure terminal")
+        send_command(ser, f"hostname {hostname}")
+        send_command(ser, f"username {user} privilege 15 secret {password}")
+        send_command(ser, f"ip domain-name {domain}")
+        send_command(ser, "crypto key generate rsa modulus 1024", delay=3)
+        send_command(ser, "line vty 0 4")
+        send_command(ser, "login local")
+        send_command(ser, "transport input ssh")
+        send_command(ser, "transport output ssh")
+        send_command(ser, "exit")
+        send_command(ser, "ip ssh version 2")
+        send_command(ser, "end")
+        send_command(ser, "write memory", delay=2)
+
+        print(f"✅ Configuración aplicada correctamente en {hostname}.")
+        ser.close()
+        return True
+
     except Exception as e:
-        print(f"[!] Error al cargar CSV: {e}")
-        return []
+        print(f"❌ Error al configurar el dispositivo {hostname}: {e}")
+        return False
 
+# 🔹 Menú principal
+def mostrar_menu():
+    clear_console()
+    print("=== MENÚ PRINCIPAL ===")
+    print("1. Mandar comandos manualmente")
+    print("2. Hacer configuraciones iniciales desde CSV")
+    print("0. Salir")
 
+# 🔹 Menú de comandos manuales
+def menu_comandos_manual():
+    port = input("🔌 Ingresa el puerto serial (ej. COM3): ")
+    try:
+        ser = serial.Serial(port, baudrate=9600, timeout=1)
+        time.sleep(2)
+        print(f"\n✅ Conectado al dispositivo en {port}")
+        while True:
+            cmd = input("📥 Ingresa el comando (o 'exit' para salir): ")
+            if cmd.lower() == "exit":
+                break
+            output = send_command(ser, cmd, delay=2)
+            print(f"\n📤 Respuesta:\n{output}")
+        ser.close()
+    except Exception as e:
+        print(f"❌ Error al conectar: {e}")
+    input("Presione ENTER para volver al menú...")
+
+# 🔹 Flujo de configuración inicial
+def flujo_configuracion_csv():
+    clear_console()
+    df = pd.read_csv("Data.csv")
+    print("\n📂 Dispositivos encontrados en el archivo:")
+    print(df)
+
+    Hostnames = [str(d).strip()[0] + str(s).strip() for d, s in zip(df['Device'], df['Serie'])]
+    list_device = [(p, h, u, pas, dom) for p, u, pas, dom, h in zip(df['Port'], df['User'], df['Password'], df['Ip-domain'], Hostnames)]
+
+    print("\n📋 Lista de dispositivos y sus configuraciones:")
+    for item in list_device:
+        print(item)
+    input("Presione ENTER para continuar...")
+
+    configured_devices = []
+    skipped_devices = []
+
+    for idx, (p, h, u, pas, dom) in enumerate(list_device, start=1):
+        clear_console()
+        print(f"\n➡️ Conecte ahora el dispositivo {idx}: {h} en el puerto {p}")
+        input("Presione ENTER cuando el dispositivo esté conectado...")
+        success = configure_device(p, h, u, pas, dom)
+        if success:
+            configured_devices.append(h)
+        else:
+            skipped_devices.append(h)
+        print("=================================================")
+        input("Presione ENTER para continuar...")
+
+    clear_console()
+    print("📊 Resumen de la configuración:")
+    print(f"✅ Dispositivos configurados ({len(configured_devices)}): {configured_devices}")
+    print(f"⚠ Dispositivos saltados ({len(skipped_devices)}): {skipped_devices}")
+    input("Presione ENTER para volver al menú...")
+
+# 🔹 Ejecutar menú
 if __name__ == "__main__":
-    archivo = "devices.csv"
-    dispositivos = cargar_dispositivos(archivo)
-
-    for d in dispositivos:
-        router = d["router"]
-        router.conectar()
-        if router.conexion:
-            serie_real, modelo_real = router.obtener_serie_y_modelo()
-            print(f"[i] Detectado en {d['nombre']}: Modelo={modelo_real}, Serie={serie_real}")
-
-            if serie_real == d["serie_esperada"] and modelo_real == d["modelo_esperado"]:
-                print(f"[✔] Coinciden modelo y serie. Aplicando comandos a {d['nombre']}.")
-                router.enviar_comando(f"hostname {d['nombre']}")
-                router.enviar_comando(f"username {d['usuario']} privilege 15 secret {d['password']}")
-                router.enviar_comando(f"ip domain-name {d['domain']}")
-            else:
-                print(f"[✘] No coinciden -> Esperado: Modelo={d['modelo_esperado']}, Serie={d['serie_esperada']} | Detectado: Modelo={modelo_real}, Serie={serie_real}.")
-            router.cerrar()
+    while True:
+        mostrar_menu()
+        opcion = input("Selecciona una opción: ")
+        if opcion == "1":
+            menu_comandos_manual()
+        elif opcion == "2":
+            flujo_configuracion_csv()
+        elif opcion == "0":
+            print("👋 Saliendo del programa...")
+            break
+        else:
+            print("❌ Opción inválida.")
+            input("Presione ENTER para continuar...")
