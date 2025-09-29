@@ -11,11 +11,24 @@ def clear_console():
     else:
         os.system('clear')
 
-# 🔹 Enviar comando al router
+# 🔹 Enviar comando al router (flujo automático)
 def send_command(ser, command, delay=1):
-    ser.write((command + "\r\n").encode())  # CRLF
+    ser.write((command + "\r\n").encode())
     time.sleep(delay)
-    output = ser.read(ser.in_waiting).decode(errors="ignore")
+    output = ""
+    while ser.in_waiting > 0:
+        output += ser.read(ser.in_waiting).decode(errors="ignore")
+        time.sleep(0.1)
+    return output
+
+# 🔹 Enviar comando al router (opción manual)
+def send_command_manual(ser, command, delay=1):
+    ser.write((command + "\r\n").encode())
+    time.sleep(delay)
+    output = ""
+    while ser.in_waiting > 0:
+        output += ser.read(ser.in_waiting).decode(errors="ignore")
+        time.sleep(0.1)
     return output
 
 # 🔹 Obtener número de serie desde "show inventory"
@@ -30,20 +43,8 @@ def get_serial(ser):
 # 🔹 Configuración de dispositivo
 def configure_device(port, hostname, user, password, domain):
     try:
-        ser = serial.Serial(port, baudrate=9600, timeout=1)
+        ser = serial.Serial(port, baudrate=9600, timeout=2)
         time.sleep(2)
-        print(f"\n🔗 Conectado al dispositivo en {port} ({hostname})")
-
-        serial_num = get_serial(ser)
-        if not serial_num:
-            print("⚠ No se pudo obtener el número de serie. Saltando configuración.")
-            ser.close()
-            return False
-
-        if hostname[1:] != serial_num:
-            print(f"⚠ La serie del dispositivo ({serial_num}) no coincide con la del CSV ({hostname[1:]}). Saltando configuración.")
-            ser.close()
-            return False
 
         send_command(ser, "enable")
         send_command(ser, "configure terminal")
@@ -80,21 +81,28 @@ def mostrar_menu():
 def menu_comandos_manual():
     port = input("🔌 Ingresa el puerto serial (ej. COM3): ")
     try:
-        ser = serial.Serial(port, baudrate=9600, timeout=1)
+        ser = serial.Serial(port, baudrate=9600, timeout=2)
         time.sleep(2)
         print(f"\n✅ Conectado al dispositivo en {port}")
+
+        serial_real = get_serial(ser)
+        if serial_real:
+            print(f"ℹ Serie detectada en el dispositivo: {serial_real}")
+        else:
+            print("⚠ No se detectó número de serie en el dispositivo.")
+
         while True:
             cmd = input("📥 Ingresa el comando (o 'exit' para salir): ")
             if cmd.lower() == "exit":
                 break
-            output = send_command(ser, cmd, delay=2)
+            output = send_command_manual(ser, cmd, delay=1)
             print(f"\n📤 Respuesta:\n{output}")
         ser.close()
     except Exception as e:
         print(f"❌ Error al conectar: {e}")
     input("Presione ENTER para volver al menú...")
 
-# 🔹 Flujo de configuración inicial
+# 🔹 Flujo de configuración inicial desde CSV
 def flujo_configuracion_csv():
     clear_console()
     df = pd.read_csv("Data.csv")
@@ -104,7 +112,7 @@ def flujo_configuracion_csv():
     Hostnames = [str(d).strip()[0] + str(s).strip() for d, s in zip(df['Device'], df['Serie'])]
     list_device = [(p, h, u, pas, dom) for p, u, pas, dom, h in zip(df['Port'], df['User'], df['Password'], df['Ip-domain'], Hostnames)]
 
-    print("\n📋 Lista de dispositivos y sus configuraciones:")
+    print("\n📋 Lista de dispositivos y sus configuraciones (hostname + serie esperada):")
     for item in list_device:
         print(item)
     input("Presione ENTER para continuar...")
@@ -116,11 +124,17 @@ def flujo_configuracion_csv():
         clear_console()
         print(f"\n➡️ Conecte ahora el dispositivo {idx}: {h} en el puerto {p}")
         input("Presione ENTER cuando el dispositivo esté conectado...")
+
+        # ⚠ Pedir al usuario desconectar/reconectar antes de abrir el puerto
+        input("🔌 Desconecte y vuelva a conectar el cable serial, luego presione ENTER para continuar...")
+
+        # Intentar configurar el dispositivo
         success = configure_device(p, h, u, pas, dom)
         if success:
             configured_devices.append(h)
         else:
             skipped_devices.append(h)
+
         print("=================================================")
         input("Presione ENTER para continuar...")
 
