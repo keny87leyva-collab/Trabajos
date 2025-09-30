@@ -73,8 +73,8 @@ def configure_device(port, hostname, user, password, domain):
 def mostrar_menu():
     clear_console()
     print("=== MENÚ PRINCIPAL ===")
-    print("1. Mandar comandos manualmente")
-    print("2. Hacer configuraciones iniciales desde CSV")
+    print("1. Mandar comandos ")
+    print("2. Hacer configuraciones en csv")
     print("0. Salir")
 
 # 🔹 Menú de comandos manuales
