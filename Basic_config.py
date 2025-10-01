@@ -105,7 +105,7 @@ def menu_comandos_manual():
 # 🔹 Flujo de configuración inicial desde CSV
 def flujo_configuracion_csv():
     clear_console()
-    df = pd.read_csv("Data.csv")
+    df = pd.read_csv("Data(1).csv")
     print("\n📂 Dispositivos encontrados en el archivo:")
     print(df)
 
