@@ -2,82 +2,160 @@ import serial
 import time
 import csv
 import os
-import textfsm
-import pandas as pd
+from textfsm import TextFSM
 
-# === Funciones ===
+# ==============================
+# 🔹 FUNCIONES AUXILIARES
+# ==============================
 
-def send_command(ser, command, delay=2):
-    """Envía un comando al dispositivo y devuelve la salida"""
-    ser.write((command + "\n").encode())
-    time.sleep(delay)
-    return ser.read_all().decode(errors="ignore")
+def clear_console():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
-def parse_output(template_file, raw_output):
-    """Aplica un template de TextFSM a una salida"""
-    with open(template_file) as template:
-        fsm = textfsm.TextFSM(template)
-        parsed_data = fsm.ParseText(raw_output)
-    return parsed_data, fsm.header
-
-def process_device(row):
-    """Procesa un router: obtiene hostname, serie e interfaces"""
-    port = row["Port"]
-    baudrate = 9600
-    ser = None
-    data = row.copy()
-
+def conectar_router(puerto, baudrate=9600, timeout=1):
     try:
-        ser = serial.Serial(port, baudrate, timeout=1)
-        print(f"🔗 Conectado a {row['Device']} en {port}")
-
-        # --- Hostname y serie ---
-        output = send_command(ser, "show version", delay=3)
-        version_data, headers = parse_output("templates/cisco_show_version.tpl", output)
-        if version_data:
-            data["Serie_detectada"] = version_data[0][1]
-            data["Device"] = version_data[0][0]
-
-        # --- Interfaces ---
-        output = send_command(ser, "show ip int brief", delay=2)
-        int_data, int_headers = parse_output("templates/cisco_show_ip_int_brief.tpl", output)
-
-        # Mapear interfaces a columnas dinámicas
-        for i, row_int in enumerate(int_data, start=1):
-            data[f"int{i}"] = row_int[0]  # Interface
-            data[f"status{i}"] = row_int[4]  # Status
-            data[f"protocol{i}"] = row_int[5]  # Protocol
-
-        return data
-
+        ser = serial.Serial(port=puerto, baudrate=baudrate, timeout=timeout)
+        time.sleep(2)
+        print(f"\n🔗 Conectado a Router en {puerto}")
+        return ser
     except Exception as e:
-        print(f"❌ Error con {row['Device']} en {port}: {e}")
-        return row
-    finally:
-        if ser and ser.is_open:
-            ser.close()
+        print(f"❌ Error al conectar al router: {e}")
+        return None
 
-# === MAIN ===
-def main():
-    input_csv = "dispositivos.csv"
+def enviar_comando(ser, comando, delay=1):
+    ser.write((comando + '\n').encode())
+    time.sleep(delay)
+    salida = ser.read_all().decode(errors='ignore')
+    return salida
 
-    if not os.path.exists(input_csv):
-        print(f"❌ No existe {input_csv}")
+# ==============================
+# 🔹 LEER INTERFACES Y GUARDAR CSV
+# ==============================
+
+def leer_interfaces_y_guardar_csv():
+    puerto = "COM9"  # 🔧 ajusta tu puerto si cambia
+    archivo_tpl = "cisco_show_ip_int_brief.tpl"
+    archivo_csv = "Dispositivosfsm.csv"
+
+    # 🔹 Verifica que el archivo CSV exista o lo crea vacío con encabezados
+    if not os.path.exists(archivo_csv):
+        print("📄 No existe el archivo CSV. Creando uno nuevo...")
+        campos = [
+            "Serie","Port","Device","User","Password","Ip-domain","Serie_detectada"
+        ]
+        for i in range(1, 11):
+            campos += [f"int{i}", f"ip{i}", f"status{i}", f"protocol{i}"]
+
+        with open(archivo_csv, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=campos)
+            writer.writeheader()
+        print(f"✅ CSV creado: {archivo_csv}\n")
+
+    ser = conectar_router(puerto)
+    if not ser:
         return
 
-    # Leer CSV original
-    df = pd.read_csv(input_csv)
+    try:
+        # Enviar comando y obtener salida
+        enviar_comando(ser, "end", delay=2)  # Asegura que estamos en el prompt
+        salida = enviar_comando(ser, "show ip interface brief", delay=2)
+        print("\n📤 Respuesta del router:\n")
+        print(salida)
 
-    # Procesar cada dispositivo
-    new_rows = []
-    for _, row in df.iterrows():
-        updated = process_device(row.to_dict())
-        new_rows.append(updated)
+        # Cargar y aplicar el template FSM
+        with open(archivo_tpl) as template:
+            fsm = TextFSM(template)
+            result = fsm.ParseText(salida)
 
-    # Guardar de nuevo en el CSV
-    new_df = pd.DataFrame(new_rows)
-    new_df.to_csv(input_csv, index=False)
-    print(f"\n✅ CSV actualizado: {input_csv}")
+        if not result:
+            print("⚠️ No se encontraron interfaces con IP asignada.")
+        else:
+            print("✅ Interfaces detectadas correctamente.\n")
+
+        # Crear diccionario con los datos base
+        data = {
+            "Serie": "FTX1537827U",
+            "Port": puerto,
+            "Device": "RFTX1050W1PR",
+            "User": "Cisco",
+            "Password": "Cisco",
+            "Ip-domain": "cisco.local",
+            "Serie_detectada": "",
+        }
+
+        # Agregar interfaces dinámicamente (máximo 10)
+        for i, iface in enumerate(result[:10], start=1):
+            data[f'int{i}'] = iface[0]           # INTERFACE
+            data[f'ip{i}'] = iface[1]            # IP_ADDRESS
+            data[f'status{i}'] = iface[4]        # STATUS
+            data[f'protocol{i}'] = iface[5]      # PROTOCOL
+
+        # Guardar datos al CSV
+        with open(archivo_csv, "a", newline="", encoding="utf-8") as csvfile:
+            campos = [
+                "Serie","Port","Device","User","Password","Ip-domain","Serie_detectada"
+            ]
+            for i in range(1, 11):
+                campos += [f"int{i}", f"ip{i}", f"status{i}", f"protocol{i}"]
+
+            writer = csv.DictWriter(csvfile, fieldnames=campos)
+            writer.writerow(data)
+
+        print(f"✅ CSV actualizado: {archivo_csv}")
+
+    except Exception as e:
+        print(f"❌ Error procesando interfaces: {e}")
+    finally:
+        ser.close()
+        input("Presiona ENTER para volver al menú...")
+
+# ==============================
+# 🔹 MENÚ PRINCIPAL
+# ==============================
+
+def menu_principal():
+    while True:
+        clear_console()
+        print("=== MENÚ PRINCIPAL ===")
+        print("1. Mandar comandos manualmente")
+        print("2. Leer interfaces con IP y guardar en CSV")
+        print("0. Salir")
+        opcion = input("Selecciona una opción: ")
+
+        if opcion == "1":
+            comando_manual()
+        elif opcion == "2":
+            leer_interfaces_y_guardar_csv()
+        elif opcion == "0":
+            print("👋 Saliendo del programa...")
+            break
+        else:
+            print("⚠️ Opción no válida.")
+            time.sleep(1)
+
+# ==============================
+# 🔹 MODO MANUAL
+# ==============================
+
+def comando_manual():
+    puerto = "COM9"
+    ser = conectar_router(puerto)
+    if not ser:
+        return
+
+    try:
+        while True:
+            comando = input("\n📥 Ingresa el comando (o 'exit' para salir): ")
+            if comando.lower() == "exit":
+                break
+            respuesta = enviar_comando(ser, comando)
+            print("\n📤 Respuesta:")
+            print(respuesta)
+    finally:
+        ser.close()
+
+# ==============================
+# 🔹 EJECUCIÓN
+# ==============================
 
 if __name__ == "__main__":
-    main()
+    menu_principal()
