@@ -1,0 +1,26 @@
+- name: Leer información de switches y routers
+  hosts: all
+  gather_facts: no
+
+  tasks:
+
+    - name: Ejecutar "show version"
+      cisco.ios.ios_command:
+        commands:
+          - show version
+      register: version_out
+
+    - name: Ejecutar "show ip interface brief"
+      cisco.ios.ios_command:
+        commands:
+          - show ip interface brief
+      register: int_out
+
+    - name: Mostrar salida
+      debug:
+        msg:
+          - "=== {{ inventory_hostname }} ==="
+          - "VERSION:"
+          - "{{ version_out.stdout }}"
+          - "INTERFACES:"
+          - "{{ int_out.stdout }}"

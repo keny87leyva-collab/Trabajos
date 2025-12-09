@@ -1,0 +1,53 @@
+# Proyecto Unidad 2 - Automatización de Redes con Ansible
+
+## Descripción
+
+Este proyecto es un conjunto de playbooks de Ansible diseñados para **recolectar información de switches y routers Cisco** de manera automatizada.  
+ los archivos YAML contienen la configuración y estructura del inventario y variables necesarias.
+
+El proyecto incluye:
+
+- Inventario de dispositivos en formato YAML.
+- Variables específicas por host en `host_vars/`.
+- Playbooks para recolectar información de interfaces, VLANs y versiones IOS.
+- Estructura de carpetas organizada según buenas prácticas de Ansible.
+
+---
+
+## Estructura del Proyecto
+proyecto-ansible-U2/
+│
+├── inventories/
+│ └── hosts.yml # Inventario de switches y routers
+│
+├── host_vars/ # Variables específicas por dispositivo
+│ ├── SW_1.yml
+│ ├── SW_2.yml
+│ ├── SW_core.yml
+│ ├── SW_DIST.yml
+│ └── R1.yml
+│
+├── playbooks/
+│ ├── get-info.yml # Recolección de información de switches y routers
+│ └── leer_info.yml # Playbook auxiliar
+│
+├── roles/ # Roles (vacío por ahora, preparado para futuras tareas)
+├── templates/ # Plantillas (vacío, preparado para futuras tareas)
+├── files/ # Archivos adicionales
+├── docs/ # Documentación adicional
+└── ansible.cfg # Configuración de Ansible
+
+---
+
+## Uso
+
+Para ejecutar los playbooks (si se tuviera conexión a dispositivos Cisco):
+
+```bash
+ansible-playbook -i inventories/hosts.yml playbooks/get-info.yml
+ansible-playbook -i inventories/hosts.yml playbooks/leer_info.yml
+Detalles del Proyecto
+Inventario: Define grupos switches y routers con sus IPs y credenciales.
+host_vars: Contiene información específica de cada dispositivo (hostname, ubicación, rol, etc.).
+Playbooks: Incluyen tareas de preparación de archivos, recolección de información, parseo de interfaces y generación de archivos CSV.
+CSV Output: Los playbooks generan archivos .csv con datos de interfaces y VLANs (solo si se ejecutan sobre dispositivos reales).

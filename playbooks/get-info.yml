@@ -1,0 +1,136 @@
+---
+- name: 01. Captura automática de información de red
+  hosts: all
+  gather_facts: no
+  connection: network_cli
+
+  vars:
+    sep_csv: ";"
+    csv_sw_ifaces: "./outputs/datos_switches.csv"
+    csv_sw_svis: "./outputs/datos_svis.csv"
+    csv_rt_ifaces: "./outputs/datos_routers.csv"
+
+  tasks:
+    ###########################################################################
+    # ETAPA 1 – PREPARACIÓN DEL ENTORNO LOCAL
+    ###########################################################################
+    - name: Inicializar carpeta local y archivos CSV
+      block:
+
+        - name: Asegurar carpeta de salida
+          ansible.builtin.file:
+            path: ./outputs
+            state: directory
+
+        - name: Borrar archivos antiguos
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ csv_sw_ifaces }}"
+            - "{{ csv_sw_svis }}"
+            - "{{ csv_rt_ifaces }}"
+
+        - name: Encabezado para SWITCHES (Interfaces)
+          ansible.builtin.copy:
+            dest: "{{ csv_sw_ifaces }}"
+            content: "Equipo;Serie;Modelo;IOS;Interfaz;Descripcion;Estado;VLAN;Duplex;Velocidad;Tipo\n"
+
+        - name: Encabezado para SWITCHES (SVI)
+          ansible.builtin.copy:
+            dest: "{{ csv_sw_svis }}"
+            content: "Equipo;SVI;Direccion_IP\n"
+
+        - name: Encabezado para ROUTERS
+          ansible.builtin.copy:
+            dest: "{{ csv_rt_ifaces }}"
+            content: "Equipo;Interfaz;IP;OK;Metodo;Estado;Protocolo\n"
+
+      delegate_to: localhost
+      run_once: true
+
+    ###########################################################################
+    # ETAPA 2 – PROCESO PARA SWITCHES
+    ###########################################################################
+    - name: Ejecutar comandos en Switches
+      when: inventory_hostname in groups['switches']
+      cisco.ios.ios_command:
+        commands:
+          - show version
+          - show interfaces status
+          - show ip interface brief
+      register: sw_data
+
+    - name: Extraer datos de versión, modelo y número de serie
+      when: inventory_hostname in groups['switches']
+      set_fact:
+        num_serie: "{{ (sw_data.stdout[0] | regex_search('(?i)System serial number\\s*:?\\s*(\\S+)', '\\1') | first) | default('N/A') }}"
+        tipo_modelo: "{{ (sw_data.stdout[0] | regex_search('(?i)Model number\\s*:?\\s*(\\S+)', '\\1') | first) | default('N/A') }}"
+        ios_version: "{{ (sw_data.stdout[0] | regex_search('(?i)Version\\s+([\\w\\.()]+)', '\\1') | first) | default('N/A') }}"
+
+    - name: Procesar Interfaces de Switches
+      when: inventory_hostname in groups['switches']
+      set_fact:
+        lista_interfaces: >-
+          {{ sw_data.stdout[1].splitlines()
+             | select('match', '^(Gi|Fa|Te|Eth|Po\\d)')
+             | map('regex_replace',
+                    '^(\\S+)\\s+(.*?)\\s+(connected|notconnect|err-disabled|disabled|inactive|monitoring)\\s+(\\S+)\\s+(\\S+)\\s+(\\S+)\\s+(.*)$',
+                    '\\1;\\2;\\3;\\4;\\5;\\6;\\7')
+             | list }}
+
+    - name: Procesar SVIs (Switch Virtual Interfaces)
+      when: inventory_hostname in groups['switches']
+      set_fact:
+        lista_svis: >-
+          {{ sw_data.stdout[2].splitlines()
+             | select('match', '(?i)^Vlan')
+             | map('regex_replace', '^(\\S+)\\s+(\\S+).*$', '\\1;\\2')
+             | list }}
+
+    - name: Guardar Interfaces de Switch en CSV
+      when: inventory_hostname in groups['switches']
+      ansible.builtin.lineinfile:
+        path: "{{ csv_sw_ifaces }}"
+        line: "{{ inventory_hostname }};{{ num_serie }};{{ tipo_modelo }};{{ ios_version }};{{ item }}"
+        insertafter: EOF
+      loop: "{{ lista_interfaces }}"
+      delegate_to: localhost
+
+    - name: Guardar SVI de Switch en CSV
+      when: inventory_hostname in groups['switches']
+      ansible.builtin.lineinfile:
+        path: "{{ csv_sw_svis }}"
+        line: "{{ inventory_hostname }};{{ item }}"
+        insertafter: EOF
+      loop: "{{ lista_svis }}"
+      delegate_to: localhost
+
+    ###########################################################################
+    # ETAPA 3 – PROCESO PARA ROUTERS
+    ###########################################################################
+    - name: Ejecutar comandos en Routers
+      when: inventory_hostname in groups['routers']
+      cisco.ios.ios_command:
+        commands:
+          - show ip interface brief
+      register: rt_data
+
+    - name: Formatear interfaces del router
+      when: inventory_hostname in groups['routers']
+      set_fact:
+        router_ifaces: >-
+          {{ rt_data.stdout[0].splitlines()
+             | select('match', '^(Gi|Fa|Se|Lo|Tu|Vl)')
+             | map('regex_replace', 'administratively down', 'admin_down')
+             | map('regex_replace', '\\s+', ';')
+             | list }}
+
+    - name: Guardar Interfaces del Router en CSV
+      when: inventory_hostname in groups['routers']
+      ansible.builtin.lineinfile:
+        path: "{{ csv_rt_ifaces }}"
+        line: "{{ inventory_hostname }};{{ item }}"
+        insertafter: EOF
+      loop: "{{ router_ifaces }}"
+      delegate_to: localhost
